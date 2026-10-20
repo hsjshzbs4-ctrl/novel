@@ -1,0 +1,371 @@
+"""Prompt 模板与上下文装配。
+
+原则：
+- 结构化任务（architect/planner/critic）在 prompt 里写明字段名和取值范围，降低返工；
+- 写作任务只给"必须遵守的事实"，不给"应该怎么写"的长篇指导 —— 指导容易变成套路；
+- 上下文按来源分段标注，便于模型区分"硬的"（规则、已发生事实）和"软的"（风格建议）。
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from .models import Canon, ChapterRecord
+from .recall import bigrams, overlap
+
+ARCHITECT_SYSTEM = """你是长篇网络小说的架构师。你的产出会被程序直接解析，因此必须严格遵守 JSON 格式。
+
+要求：
+1. 只输出一个 JSON 对象，不要任何解释、不要 markdown 代码块。
+2. 人物 3-6 个，必须包含 1 个主角和 1 个主要对手；每个角色的目标要具体到"想拿到什么"。
+3. 世界规则写"不可违背"的硬规则，不要写形容词。
+4. 弧（arc）按章节区间切分，第一弧覆盖第 1 章到第 N 章。
+5. 所有文本使用简体中文。
+
+JSON 结构：
+{
+  "logline": "一句话故事",
+  "style": "文风要求，一句话",
+  "characters": [
+    {"name": "", "role": "protagonist|antagonist|supporting",
+     "one_liner": "", "traits": ["", ""], "goal": "", "secret": "可选"}
+  ],
+  "rules": [{"name": "", "statement": "", "category": ""}],
+  "locations": [{"name": "", "description": ""}],
+  "secrets": [{"text": "一个真相：读者和部分角色知道，另一些人还不知道", "known_by": ["角色名"]}],
+  "arcs": [{"index": 1, "title": "", "goal": "", "conflict": "",
+            "turning_point": "", "chapter_start": 1, "chapter_end": 10}]
+}
+
+secrets 写 2-5 条**信息差**：谁是凶手、主角身世的真相、某次背叛的内情。
+known_by 只填"一开始就知道"的角色；主角通常不知道。这是防止角色说漏嘴的关键数据。"""
+
+REHEARSAL_SYSTEM = """你是长篇小说的弧预演师。给定一条弧的目标、冲突和转折点，把整条弧推演成事件骨架。
+
+要求：
+1. 只输出一个 JSON 对象，不要解释、不要 markdown 代码块。
+2. 一个事件对应一章，chapter 必须落在弧的章节区间内，按章节升序排列。
+3. summary 写"谁 做了什么 → 结果"，60 字以内，不要写对话和景物。
+4. participants 只能使用【角色档案】里已有的名字。
+5. changes 写状态变化（谁失去了什么、谁知道了什么、谁受了伤），没有就空数组。
+6. 最后一个事件必须明确达成【转折点】。
+7. 弧内事件要有递进：代价逐步升高，不能每章都是同一套动作。
+
+JSON 结构：
+{"events": [{
+  "chapter": 1,
+  "summary": "",
+  "participants": [""],
+  "changes": [""],
+  "foreshadow_hint": "可选的伏笔提示，没有就空字符串"
+}]}"""
+
+
+PLANNER_SYSTEM = """你是长篇网络小说的章纲策划。你的产出会被程序直接解析，因此必须严格遵守 JSON 格式与字段语义。
+
+要求：
+1. 只输出一个 JSON 对象，不要解释、不要 markdown 代码块。
+2. 每章必须有一个明确的"本章目标"和一个结尾钩子（hook）。
+3. scenes 写 2-4 个场景，每个场景一句话，必须包含"谁在哪里做什么"。
+4. **character 名单只能填【角色档案】里已有的名字**。角色的身份、阵营、能力边界不得改变：
+   散修不能突然变成宗门执事，长老不能突然亲自下场跑腿。
+5. 剧情需要新角色时，写进 new_characters（name + role + one_liner），**不要**塞进 characters。
+6. 如果【本弧预演事件】为本章分配了事件，**本章目标必须落实该事件**：谁做了什么、结果如何，
+   预演里写到的状态变化必须在 scenes 中体现，不得另起炉灶。
+7. foreshadow_plant 填**新伏笔**，对象形式：{"text": "一句话描述", "due_chapter": 计划回收章, "hint": "打算怎么回收"}。
+   **长线伏笔的 due_chapter 可以设在几十甚至一百多章之后，这是正常且鼓励的**，不要把所有伏笔都设成近期回收；
+   但**不要超过【全书计划章数】**，否则按现有规划永远收不回来。
+8. foreshadow_echo 填本章会让读者**重新想起**的既有伏笔 ID（本章不解决，只是提一笔）。
+9. foreshadow_payoff 填本章**真正回收**的既有伏笔 ID；只能从【到期伏笔】【其他未回收伏笔】里选，
+   没有就留空数组，**绝对不要自己编造 ID**。
+10. 【到期伏笔】里状态是"已到期"的，本章必须安排在 foreshadow_payoff 里；"临近回收"的建议用 echo 提醒。
+11. 相邻章节不得重复同一场景套路。
+12. must_not 写本章**禁止发生**的事（谁不能知道什么、谁不能死、哪条线不能推进），一句话一条；
+    stop_at 写本章停笔在哪一幕。这两项是硬约束，正文必须遵守。
+13. secret_reveal 填本章向**读者**揭示的信息差 ID；secret_learn 填本章某角色得知的信息差。
+    只能从【信息差】里选，不要编造 ID；没有就留空数组。
+
+JSON 结构：
+{"chapters": [{
+  "number": 1, "title": "", "goal": "",
+  "scenes": ["", ""],
+  "characters": [""],
+  "new_characters": [{"name": "", "role": "supporting", "one_liner": ""}],
+  "foreshadow_plant": [{"text": "", "due_chapter": 120, "hint": ""}],
+  "foreshadow_echo": ["FS-xxxxxxxx"],
+  "foreshadow_payoff": ["FS-xxxxxxxx"],
+  "must_not": ["本章禁止发生的事，一句话一条"],
+  "stop_at": "本章写到哪一幕为止",
+  "secret_reveal": ["SEC-xxxxxxxx"],
+  "secret_learn": [{"id": "SEC-xxxxxxxx", "by": ["角色名"]}],
+  "hook": ""
+}]}"""
+
+WRITER_SYSTEM = """你是一位签约网络小说作者，正在写连载正文。
+
+写作要求：
+1. 只输出正文，不要标题解释、不要"以下是"、不要写作说明。
+2. 严格遵守【本章章纲】：完成本章目标，落到结尾钩子上。
+3. 严格遵守【世界规则】与【已发生事实】，不得让已死亡角色正常出场。
+4. **【到期伏笔】必须处理**：标"已到期"的要真正回收；标"临近回收"或"长期没有回声"的，
+   用一个具体细节让它重新出现（一个物件、一句旧话、一道疤），不必解释来龙去脉。
+5. **【信息差】是硬约束**：列在"还不知道的人"里的角色，不能说出、不能直接想到那个真相；
+   他们只能判断错误、察觉异样，或往反方向推理。
+6. **【本章章纲】里的 must_not（禁止发生）是硬约束**，一个字都不能写；写到 stop_at（停笔点）就收，
+   不要越过它继续推进剧情。
+7. 对话要短，动作要具体。避免"他心中一惊""不由得"这类空转描写。
+8. 不要总结前情，不要预告后文。
+9. 目标字数约 {words} 个汉字。"""
+
+CRITIC_SYSTEM = """你是网文编辑。你只提供**修改建议**，不判定章节是否合格——合格与否由程序的硬规则决定。
+
+要求：
+1. 只输出一个 JSON 对象，不要解释。
+2. **先检查【本章硬约束】**：如果写了"禁止发生"的事、或越过了"停笔点"，必须作为最前面几条列出来。
+3. 每条 message 必须指出具体位置或具体做法（"第三段那句'他心中一惊'可以删掉，用他攥紧的手代替"），
+   禁止"节奏可以更好"这类空话。
+3. **最多 5 条建议，每条不超过 60 字**。不要复述原文，不要写分析报告。
+4. 没有问题就返回空数组。**不要为了显得尽责而编造问题**。
+5. 不要建议改动人物身份、世界规则、已发生事实——那些是硬约束，不归你管。
+6. 评分维度：钩子强度、节奏、人物一致性、文字质量。分数打严一点，7 分是"能发"。
+
+JSON 结构：
+{"score": 0-10 的数字,
+ "issues": [{"code": "HOOK|PACING|CHARACTER|PROSE",
+             "level": "warn", "message": "具体到句子的修改建议"}]}"""
+
+COMPRESS_SYSTEM = """你是记忆管理器。把章节压缩成两句话，只保留"谁做了什么、结果如何、留下什么线索"。
+只输出 JSON：{"summary": "..."}，不超过 120 字，不要解释。"""
+
+
+def _json_block(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# 各任务的 user prompt
+# ---------------------------------------------------------------------------
+
+
+def architect_user(title: str, genre: str, idea: str, chapters: int, words: int) -> str:
+    return (
+        "请为下面这本书做全书架构。\n\n"
+        f"书名：{title}\n"
+        f"类型：{genre or '未指定'}\n"
+        f"核心创意：{idea or '未指定'}\n"
+        f"计划章数：{chapters}\n"
+        f"每章目标字数：{words}\n\n"
+        "要求：第一弧覆盖前 10-20 章，弧内要有一个明确的转折点。"
+    )
+
+
+def rehearsal_user(
+    canon: Canon,
+    arc_title: str,
+    arc_info: dict[str, Any],
+    numbers: list[int],
+) -> str:
+    haystack = " ".join(
+        [
+            str(arc_info.get("goal", "")),
+            str(arc_info.get("conflict", "")),
+            str(arc_info.get("turning_point", "")),
+            arc_title,
+        ]
+    )
+    detailed = _rank_characters(canon, haystack)
+    characters = [
+        {"姓名": c.name, "定位": c.role, "身份": c.one_liner, "目标": c.goal, "状态": c.status}
+        for c in detailed
+    ]
+    rules = [{"name": r.name, "statement": r.statement} for r in canon.rules]
+    # 只有 committed 才算"已发生"；planned 是计划，不能喂回去当历史
+    history = [
+        {"chapter": e.committed_chapter or e.chapter, "event": e.summary}
+        for e in canon.rehearsal_events
+        if e.status == "committed"
+    ][-8:]
+    # 前面所有弧的一句话走向：写到第 40 弧时，模型需要知道全书怎么走过来的
+    start = arc_info.get("chapter_start", 1)
+    completed = [
+        {"arc": a.index, "title": a.title, "goal": a.goal[:36], "turning": a.turning_point[:36]}
+        for a in canon.arcs
+        if a.chapter_end < start
+    ][-30:]
+    payload = {
+        "项目": {
+            "书名": canon.meta.title,
+            "类型": canon.meta.genre,
+            "一句话故事": canon.meta.logline,
+        },
+        "本弧": {"标题": arc_title, **arc_info},
+        "已完成弧": completed,
+        "角色档案": characters,
+        "世界规则": rules,
+        "上一阶段已发生事件": history,
+        "未回收伏笔": [{"id": f.id, "text": f.text} for f in canon.open_foreshadows()[:10]],
+        "需要预演的章节号": numbers,
+    }
+    return "请预演这条弧，严格按 JSON 输出。\n\n" + _json_block(payload)
+
+
+def _rank_characters(canon: Canon, haystack: str, limit: int = 20) -> list:
+    """挑出和本段剧情最相关的角色，做详细角色卡。
+
+    千章规模下角色会有上百个，如果把完整卡片全塞进规划 prompt，
+    光角色档案就能吃掉一万多 token，而且大部分与本弧无关。
+    """
+    terms = bigrams(haystack)
+    last_seen: dict[str, int] = {}
+    for chapter in canon.chapters:
+        if chapter.brief is None:
+            continue
+        for name in chapter.brief.characters:
+            last_seen[name] = max(last_seen.get(name, 0), chapter.number)
+
+    def score(character) -> float:  # noqa: ANN001
+        value = 0.0
+        if character.name and character.name in haystack:
+            value += 100
+        if character.role in {"protagonist", "antagonist"}:
+            value += 50
+        value += min(overlap(f"{character.one_liner}{character.goal}", terms), 6)
+        # 近期活跃的略微优先，避免长期不出现的角色占卡位
+        value += last_seen.get(character.name, 0) / 200.0
+        return value
+
+    ranked = sorted(canon.characters, key=score, reverse=True)
+    return ranked[:limit]
+
+
+def planner_user(canon: Canon, numbers: list[int], arc_info: dict[str, Any]) -> str:
+    # 详细角色卡只给相关角色；其余只给名字，既省 token 又保留"不许新造人"的约束。
+    haystack = " ".join(
+        [
+            str(arc_info.get("goal", "")),
+            str(arc_info.get("conflict", "")),
+            str(arc_info.get("turning_point", "")),
+            " ".join(
+                e.summary
+                for e in canon.rehearsal_events
+                if e.status == "planned" and e.chapter in numbers
+            ),
+        ]
+    )
+    detailed = _rank_characters(canon, haystack)
+    detailed_names = {c.name for c in detailed}
+
+    characters = [
+        {
+            "姓名": c.name,
+            "定位": c.role,
+            "身份": c.one_liner,
+            "目标": c.goal,
+            "状态": c.status,
+        }
+        for c in detailed
+    ]
+    other_names = [c.name for c in canon.characters if c.name not in detailed_names]
+    omitted = max(0, len(other_names) - 100)
+    other_names = other_names[:100]
+    open_fs = [
+        {"id": f.id, "text": f.text, "planted": f.planted_chapter}
+        for f in canon.open_foreshadows()[:12]
+    ]
+    secrets = [
+        {
+            "id": s.id,
+            "text": s.text,
+            "已经知道的人": s.known_by,
+            "读者已被告知": s.revealed_chapter is not None,
+        }
+        for s in canon.secrets
+    ][:8]
+    # 本批章节分配到的预演事件：章纲必须落实它们，不能另起炉灶
+    rehearse_events = [
+        {
+            "chapter": e.chapter,
+            "event": e.summary,
+            "participants": e.participants,
+            "changes": e.changes,
+        }
+        for e in canon.rehearsal_events
+        if e.status == "planned" and e.chapter in numbers
+    ]
+    last = max(numbers) if numbers else 0
+    due_fs = [
+        {
+            "id": f.id,
+            "text": f.text,
+            "planted_chapter": f.planted_chapter,
+            "due_chapter": f.due_chapter,
+            "已沉默": f.silent_for(last),
+        }
+        for f in canon.open_foreshadows()
+        if (f.due_chapter is not None and f.due_chapter <= last)
+        or f.silent_for(last) >= 60
+    ][:10]
+
+    payload = {
+        "项目": {
+            "书名": canon.meta.title,
+            "类型": canon.meta.genre,
+            "一句话故事": canon.meta.logline,
+            "文风": canon.meta.style,
+        },
+        "当前弧": arc_info,
+        "全书计划章数": canon.meta.target_chapters,
+        "角色档案": characters,
+        "其他角色（只有名字，不要新造角色）": other_names,
+        "省略的角色数": omitted,
+        "本弧预演事件": rehearse_events,
+        "到期伏笔": due_fs,
+        "未回收伏笔": open_fs,
+        "信息差": secrets,
+        "需要生成章纲的章节号": numbers,
+    }
+    return "请为下列章节生成章纲，严格按 JSON 输出。\n\n" + _json_block(payload)
+
+
+def writer_user(
+    payload: dict[str, Any],
+    number: int,
+    words: int,
+    notes: list[str] | None = None,
+) -> str:
+    """把 context.build_writer_payload 组装好的事实渲染成 prompt。
+
+    这里只负责"怎么说"，不负责"放什么"——选择与裁剪在 context.py。
+    ``notes`` 非空时表示这是按评审意见的改写稿。
+    """
+    header = "请写第 {n} 章正文，目标约 {w} 个汉字。\n\n".format(n=number, w=words)
+    if notes:
+        lines = "\n".join(f"- {note}" for note in notes)
+        header = (
+            "请重写第 {n} 章正文，目标约 {w} 个汉字。\n\n"
+            "【上一稿的修改要求】\n{lines}\n\n"
+            "只改被点名的问题，保留原稿中成立的部分；不要新增人物和设定。\n\n"
+        ).format(n=number, w=words, lines=lines)
+    return header + _json_block(payload)
+
+
+def critic_user(record: ChapterRecord, text: str, words: int) -> str:
+    brief = record.brief
+    constraints = ""
+    if brief is not None and (brief.must_not or brief.stop_at):
+        parts = []
+        if brief.must_not:
+            parts.append("禁止发生：" + "；".join(brief.must_not))
+        if brief.stop_at:
+            parts.append("停笔点：" + brief.stop_at)
+        constraints = "【本章硬约束】\n" + "\n".join(parts) + "\n\n"
+
+    return (
+        f"第 {record.number} 章，目标 {words} 字，实际 {record.word_count} 字。\n\n"
+        f"{constraints}【正文】\n{text[:6000]}"
+    )
+
+
+def compress_user(number: int, text: str) -> str:
+    return f"第 {number} 章正文：\n\n{text[:8000]}"
