@@ -167,3 +167,48 @@ def test_revealing_same_secret_twice_warns() -> None:
     issues = check_brief(canon, brief)
 
     assert any(i.code == "SECRET" and "重复揭示" in i.message for i in issues)
+
+def test_platform_style_warns_on_dense_paragraphs() -> None:
+    canon = _canon()
+    canon.meta.platform = "fanqie"
+    record = ChapterRecord(number=1, word_count=100)
+    text = "第一句。第二句。\n\n第三句。第四句。"
+
+    issues = check_chapter(canon, record, text)
+
+    assert any(i.code == "STYLE" for i in issues)
+
+
+def test_one_sentence_per_paragraph_passes_style_check() -> None:
+    canon = _canon()
+    canon.meta.platform = "fanqie"
+    record = ChapterRecord(number=1, word_count=100)
+    text = (
+        "他推开门，外面的风灌进来，吹得墙上的催租单哗哗响。\n\n"
+        "他站在门口等了几秒，等手指不再发抖，才把门轻轻带上。\n\n"
+        "楼梯间的灯坏了，他扶着扶手往下走，胶带黏手。"
+    )
+
+    issues = check_chapter(canon, record, text)
+
+    assert not any(i.code == "STYLE" for i in issues)
+
+
+def test_style_check_skipped_without_platform() -> None:
+    canon = _canon()
+    record = ChapterRecord(number=1, word_count=100)
+    text = "第一句。第二句。\n\n第三句。第四句。"
+
+    issues = check_chapter(canon, record, text)
+
+    assert not any(i.code == "STYLE" for i in issues)
+
+def test_too_short_sentences_warn() -> None:
+    canon = _canon()
+    canon.meta.platform = "fanqie"
+    record = ChapterRecord(number=1, word_count=100)
+    text = "能动。\n\n也能动。\n\n心跳很稳。"  # 句均 3 字
+
+    issues = check_chapter(canon, record, text)
+
+    assert any(i.code == "STYLE" and "太碎" in i.message for i in issues)

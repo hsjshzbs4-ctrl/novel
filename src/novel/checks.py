@@ -21,6 +21,26 @@ def count_words(text: str) -> int:
     return len(_CJK.findall(text)) + len(_LATIN_WORD.findall(text))
 
 
+_SENTENCE_END = "。！？…"
+
+
+def count_sentences(text: str) -> int:
+    """按句末标点计数。用于衡量"一段一句"的平台排版。"""
+    count = 0
+    for char in text:
+        if char in _SENTENCE_END:
+            count += 1
+    return max(count, 1)
+
+
+def sentences_per_paragraph(text: str) -> float:
+    """平均每段几句。平台文（番茄/七猫）的标准是 1 句左右。"""
+    paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    if not paragraphs:
+        paragraphs = [line for line in text.splitlines() if line.strip()]
+    return count_sentences(text) / max(len(paragraphs), 1)
+
+
 @dataclass(frozen=True)
 class Issue:
     code: str
@@ -192,6 +212,31 @@ def check_chapter(
                 f"第{record.number}章仅 {record.word_count} 字，低于目标 {expected} 字的 60%",
             )
         )
+
+    # 平台排版：番茄/七猫是"一句一段"，两句一段读起来像文章而不像平台文。
+    # 实测样本 1.03 句/段，我们初稿常在 2.0 以上。
+    if (canon.meta.platform or "").lower() in {"fanqie", "qimao"}:
+        ratio = sentences_per_paragraph(text)
+        if ratio > 1.6:
+            issues.append(
+                Issue(
+                    "STYLE",
+                    "warn",
+                    f"平均每段 {ratio:.1f} 句，{canon.meta.platform} 要求一段一句——"
+                    "把段落按句号拆开，句子长度不用改",
+                )
+            )
+        # 另一个方向：拆过头了。番茄样本句均 22.4 字，通篇 13 字读起来像文艺腔。
+        avg_sentence = count_words(text) / count_sentences(text)
+        if avg_sentence < 14:
+            issues.append(
+                Issue(
+                    "STYLE",
+                    "warn",
+                    f"平均每句 {avg_sentence:.1f} 字，太碎了；句子要写完整，18-25 字为佳"
+                    "（短句只用来点关键动作）",
+                )
+            )
 
     for overdue in canon.overdue_foreshadows(record.number):
         issues.append(
