@@ -7,7 +7,7 @@ import pytest
 from novel import pipeline
 from novel.checks import count_words
 from novel.config import Settings
-from novel.llm import LLM, LLMResult
+from novel.llm import LLM, LLMResult, MockProvider
 from novel.models import Arc, ChapterBrief, ChapterRecord, Character, Foreshadow, Secret
 from novel.project import Project
 
@@ -254,8 +254,38 @@ def test_write_resolves_payoff_and_records_echo(project: Project, llm: LLM) -> N
     assert by_text["旧玉佩"].last_echo_chapter == 1
 
 
+class _ShortThenLongProvider:
+    """第一稿偏短（>50 字，但不达 90%），扩写后达标。"""
+
+    name = "short-then-long"
+
+    def __init__(self) -> None:
+        self.writer_calls = 0
+
+    def complete(self, task, route, system, user, json_mode, hint=None):  # noqa: ANN001
+        if task == "writer":
+            self.writer_calls += 1
+            if self.writer_calls == 1:
+                return LLMResult(text="# 第1章 测试\n\n" + "短句" * 30, model="p", finish_reason="stop")
+            return LLMResult(text="# 第1章 测试\n\n" + "长句子" * 200, model="p", finish_reason="stop")
+        return LLMResult(text='{"summary": "摘要"}', model="p", finish_reason="stop")
+
+
+def test_short_draft_triggers_one_topup(project: Project) -> None:
+    pipeline.architect.run(project, LLM(Settings(provider="mock"), provider=MockProvider()))
+    pipeline.planner.plan(project, LLM(Settings(provider="mock"), provider=MockProvider()), count=1)
+
+    provider = _ShortThenLongProvider()
+    llm = LLM(Settings(provider="mock", review_enabled=False), provider=provider)
+
+    result = pipeline.writer.write(project, llm, 1, words=600)
+
+    # 初稿 60 字 < 600*0.9，补写一次；补写稿更长，采用它
+    assert provider.writer_calls == 2
+    assert result.word_count >= 540
+
+
 class EmptyProvider:
-    """模拟"模型返回空正文"的情况。"""
 
     name = "empty"
 

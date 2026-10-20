@@ -95,7 +95,7 @@ def test_low_score_triggers_one_rewrite(planned: Project) -> None:
     )
     llm = _llm(provider, review_enabled=True, review_threshold=7.5, max_rewrites=1)
 
-    result = pipeline.writer.write(planned, llm, 1)
+    result = pipeline.writer.write(planned, llm, 1, words=100)
 
     assert result.rewrites == 1
     assert provider.calls.count("writer") == 2
@@ -115,7 +115,7 @@ def test_high_score_keeps_original(planned: Project) -> None:
     )
     llm = _llm(provider, review_enabled=True, review_threshold=7.5)
 
-    result = pipeline.writer.write(planned, llm, 1)
+    result = pipeline.writer.write(planned, llm, 1, words=100)
 
     assert result.review_score == 8.6
     assert result.rewrites == 0
@@ -141,7 +141,7 @@ def test_rewrite_that_breaks_hard_rules_is_discarded(planned: Project) -> None:
     )
     llm = _llm(provider, review_enabled=True, review_threshold=7.5)
 
-    result = pipeline.writer.write(planned, llm, 1)
+    result = pipeline.writer.write(planned, llm, 1, words=100)
 
     # 改写稿被硬校验拦下，保留原稿
     assert result.rewrites == 0
@@ -156,7 +156,7 @@ def test_review_disabled_skips_critic(planned: Project) -> None:
     )
     llm = _llm(provider, review_enabled=False)
 
-    result = pipeline.writer.write(planned, llm, 1)
+    result = pipeline.writer.write(planned, llm, 1, words=100)
 
     assert "critic" not in provider.calls
     assert result.review_score is None
@@ -174,8 +174,45 @@ def test_hard_errors_skip_critic(planned: Project) -> None:
     )
     llm = _llm(provider, review_enabled=True)
 
-    result = pipeline.writer.write(planned, llm, 1)
+    result = pipeline.writer.write(planned, llm, 1, words=100)
 
     # 有硬伤先修硬伤，不在错的东西上讨论文笔
     assert "critic" not in provider.calls
     assert result.status == "rejected"
+
+
+class _EmptyRewriteProvider:
+    """第一稿正常，改写时把额度全花在思考上、正文为空。"""
+
+    def __init__(self, draft: str) -> None:
+        self.draft = draft
+        self.writer_calls = 0
+
+    def complete(self, task, route, system, user, json_mode, hint=None):  # noqa: ANN001
+        if task == "writer":
+            self.writer_calls += 1
+            if self.writer_calls == 1:
+                return LLMResult(text=self.draft, model="scripted", finish_reason="stop")
+            return LLMResult(
+                text="", model="scripted", finish_reason="length", completion_tokens=16000
+            )
+        if task == "critic":
+            return LLMResult(
+                text='{"score": 5.0, "issues": [{"code": "HOOK", "level": "warn", "message": "钩子弱"}]}',
+                model="scripted",
+                finish_reason="stop",
+            )
+        return LLMResult(text="", model="scripted", finish_reason="stop")
+
+
+def test_empty_rewrite_reports_reason_and_keeps_draft(planned: Project) -> None:
+    provider = _EmptyRewriteProvider(_draft("原稿"))
+    llm = _llm(provider, review_enabled=True, review_threshold=7.5, max_rewrites=1)
+
+    result = pipeline.writer.write(planned, llm, 1, words=100)
+
+    # 保留原稿，但要说清楚为什么没改成——不能只说"失败"
+    assert "原稿" in result.path.read_text(encoding="utf-8")
+    assert "空稿" in result.review_action
+    assert "length" in result.review_action
+    assert result.rewrites == 0

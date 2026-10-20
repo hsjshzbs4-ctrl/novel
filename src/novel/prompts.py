@@ -116,7 +116,13 @@ WRITER_SYSTEM = """你是一位签约网络小说作者，正在写连载正文�
    不要越过它继续推进剧情。
 7. 对话要短，动作要具体。避免"他心中一惊""不由得"这类空转描写。
 8. 不要总结前情，不要预告后文。
-9. 目标字数约 {words} 个汉字。"""
+9. **最后一句话必须是钩子**：一个新出现的问题、一个反常的细节、或一个不该动却动了的东西。
+   不要用"他握紧了拳头""明天会更好"这类收束句结尾——读者看完要立刻想点下一章。
+10. 目标字数 {words} 个汉字，**不得少于目标的 90%**。字数不够时用具体的动作、对话、环境细节去补，
+    不要复述已经写过的内容，也不要空转抒情。"""
+
+#: 低于目标的这个比例就补写一次
+LENGTH_TOPUP_RATIO = 0.9
 
 CRITIC_SYSTEM = """你是网文编辑。你只提供**修改建议**，不判定章节是否合格——合格与否由程序的硬规则决定。
 
@@ -408,3 +414,21 @@ def digest_user(arc: Any, records: list[Any]) -> str:
     for record in records:
         lines.append(f"- 第{record.number}章：{record.summary or record.title}")
     return "\n".join(lines)
+
+
+def expand_user(
+    payload: dict[str, Any],
+    number: int,
+    words: int,
+    draft: str,
+    current_words: int,
+) -> str:
+    """字数不足时请求扩写：只补细节，不改情节。"""
+    return (
+        f"第 {number} 章初稿只有 {current_words} 字，目标 {words} 字。\n\n"
+        "请在**保留全部已发生情节与对白**的前提下扩写：只补动作、感官、环境、对话的细节，\n"
+        "不要改变结局，不要重复已写过的内容，不要添加新的情节转折。\n"
+        "直接输出完整的扩写后正文。\n\n"
+        f"【本章章纲】\n{_json_block(payload.get('本章章纲', {}))}\n\n"
+        f"【现有正文】\n{draft}"
+    )

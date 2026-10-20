@@ -151,11 +151,11 @@ def test_write_resumes_after_commit_crash(project: Project, monkeypatch: pytest.
 
     monkeypatch.setattr(CanonStore, "save", flaky)
     with pytest.raises(RuntimeError):
-        pipeline.writer.write(project, llm, 1)
+        pipeline.writer.write(project, llm, 1, words=400)
     assert provider.calls.count("writer") == 1
 
     monkeypatch.setattr(CanonStore, "save", original_save)
-    result = pipeline.writer.write(project, llm, 1)
+    result = pipeline.writer.write(project, llm, 1, words=400)
 
     assert result.resumed
     assert provider.calls.count("writer") == 1, "重跑时不应重新调用 writer"
@@ -167,8 +167,8 @@ def test_fresh_flag_forces_regeneration(project: Project) -> None:
     provider = CountingProvider(DRAFT)
     llm = _llm(provider)
 
-    pipeline.writer.write(project, llm, 1, fresh=True)
-    pipeline.writer.write(project, llm, 1, fresh=True)
+    pipeline.writer.write(project, llm, 1, words=400, fresh=True)
+    pipeline.writer.write(project, llm, 1, words=400, fresh=True)
 
     # 每次都强制重新生成
     assert provider.calls.count("writer") == 2
