@@ -17,7 +17,7 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-flash"
 
 #: 任务名 -> 默认路由。新增任务时在这里登记即可。
-TASK_NAMES = ("architect", "rehearsal", "planner", "writer", "critic", "compress", "digest")
+TASK_NAMES = ("architect", "rehearsal", "planner", "writer", "critic", "compress", "digest", "retitle")
 
 
 @dataclass(frozen=True)
@@ -53,8 +53,9 @@ def default_routes() -> dict[str, ModelRoute]:
         "writer": ModelRoute(temperature=0.9, max_tokens=32000),
         # critic 同样会被思考吃额度：5000 时出现过整章评不出分的情况
         "critic": ModelRoute(temperature=0.2, max_tokens=12000, json_mode=True),
-        "compress": ModelRoute(temperature=0.2, max_tokens=1200),
-        "digest": ModelRoute(temperature=0.2, max_tokens=800, json_mode=True),
+        "compress": ModelRoute(temperature=0.2, max_tokens=3000),
+        "digest": ModelRoute(temperature=0.2, max_tokens=3000, json_mode=True),
+        "retitle": ModelRoute(temperature=0.9, max_tokens=3000, json_mode=True),
     }
 
 

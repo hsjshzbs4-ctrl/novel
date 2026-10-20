@@ -430,6 +430,38 @@ def config(
     )
 
 
+@app.command("retitle")
+def retitle(
+    chapter: Optional[int] = typer.Option(None, "--ch", "-c", help="只改这一章"),
+    all_chapters: bool = typer.Option(False, "--all", help="改所有已写章节"),
+    path: Path = typer.Option(Path("."), "--path", "-p"),
+) -> None:
+    """把章节标题改成钩子句（只动标题，不动正文）。"""
+    if chapter is None and not all_chapters:
+        _fail("要么 --ch N，要么 --all")
+
+    project = _project(path)
+    llm = _llm()
+    numbers = [chapter] if chapter is not None else None
+
+    try:
+        changed = pipeline.retitle.run(project, llm, numbers)
+    except (pipeline.retitle.RetitleError, LLMError) as exc:
+        _fail(str(exc))
+
+    if not changed:
+        console.print("[yellow]标题没有变化（模型给的和现在一样，或为空）。[/yellow]")
+        return
+
+    table = Table(title="章节标题")
+    table.add_column("章", width=4)
+    table.add_column("原标题")
+    table.add_column("新标题")
+    for number, old, new in changed:
+        table.add_row(str(number), old or "-", new)
+    console.print(table)
+
+
 @app.command("status")
 def status(path: Path = typer.Option(Path("."), "--path", "-p")) -> None:
     """查看进度。"""

@@ -233,21 +233,32 @@ def write(
 
         metered = UsageLogger(llm, store, chapter=number)
         cached = CachedLLM(metered, store, f"ch{number}")
-        raw = cached.run("writer", system, user, hint=hint)
 
-        # 空回复必须当场拦住：否则 _clean 会补一个标题，落盘成 6 个字的"章节"，
-        # 而且后续摘要、校验、Canon 全会被这堆垃圾污染。
-        # 重试必须绕开缓存：同一个 prompt 指纹只会拿回同一份空稿，等于没重试。
-        if count_words(raw.text) < MIN_CHAPTER_WORDS:
-            raw = metered.run("writer", system, user, hint=hint)
-        if count_words(raw.text) < MIN_CHAPTER_WORDS:
-            raise LLMError(
-                f"第{number}章正文为空或过短（{count_words(raw.text)} 字），"
-                f"finish_reason={raw.finish_reason!r}，completion_tokens={raw.completion_tokens}；"
-                "未写入文件。可降低目标字数或检查模型状态后重试。"
+        # 带 --note 打磨已有章节时，改的是现有稿：重新生成一遍再改，
+        # 既多花一次调用，又会把已经改好的段落推翻。
+        existing = project.chapter_path(number)
+        if notes and not fresh and existing.exists():
+            text = _clean(
+                existing.read_text(encoding="utf-8", errors="replace"),
+                number,
+                record.title or f"第{number}章",
             )
+        else:
+            raw = cached.run("writer", system, user, hint=hint)
 
-        text = _clean(raw.text, number, record.title or f"第{number}章")
+            # 空回复必须当场拦住：否则 _clean 会补一个标题，落盘成 6 个字的"章节"，
+            # 而且后续摘要、校验、Canon 全会被这堆垃圾污染。
+            # 重试必须绕开缓存：同一个 prompt 指纹只会拿回同一份空稿，等于没重试。
+            if count_words(raw.text) < MIN_CHAPTER_WORDS:
+                raw = metered.run("writer", system, user, hint=hint)
+            if count_words(raw.text) < MIN_CHAPTER_WORDS:
+                raise LLMError(
+                    f"第{number}章正文为空或过短（{count_words(raw.text)} 字），"
+                    f"finish_reason={raw.finish_reason!r}，completion_tokens={raw.completion_tokens}；"
+                    "未写入文件。可降低目标字数或检查模型状态后重试。"
+                )
+            text = _clean(raw.text, number, record.title or f"第{number}章")
+
         record.word_count = count_words(text)
         issues = check_chapter(canon, record, text, target_words=target_words)
 
