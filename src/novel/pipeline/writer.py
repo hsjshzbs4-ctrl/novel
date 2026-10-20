@@ -190,6 +190,7 @@ def write(
     *,
     words: int | None = None,
     fresh: bool = False,
+    notes: list[str] | None = None,
 ) -> WriteResult:
     # 整章只开一个连接：断点写入和 canon 落盘共用，进程中途死掉也不会丢已完成的部分
     with project.store() as store:
@@ -247,10 +248,32 @@ def write(
         record.word_count = count_words(text)
         issues = check_chapter(canon, record, text, target_words=target_words)
 
-        # 双轨评审：只有硬校验全过的章节才送 Critic，避免在错的东西上讨论文笔
+        # 作者意见优先于评审：作者知道自己要什么，不再让 Critic 猜。
+        rounds = 0
         critique = None
         action = ""
-        if llm.settings.review_enabled and not has_errors(issues):
+        if notes:
+            revised, reason = _rewrite(
+                cached, system, payload, number, target_words, list(notes), hint
+            )
+            candidate = _clean(revised, number, record.title or f"第{number}章") if revised else ""
+            if not candidate:
+                action = reason or "按作者意见改写失败，保留原稿"
+            else:
+                probe = record.model_copy(deep=True)
+                probe.word_count = count_words(candidate)
+                candidate_issues = check_chapter(canon, probe, candidate, target_words=target_words)
+                if has_errors(candidate_issues):
+                    errors = "；".join(i.message for i in candidate_issues if i.level == "error")
+                    action = f"改写稿未通过硬校验，保留原稿（{errors[:60]}）"
+                else:
+                    text, issues = candidate, candidate_issues
+                    record.word_count = probe.word_count
+                    rounds = 1
+                    action = "按作者意见改写"
+
+        # 双轨评审：只有硬校验全过的章节才送 Critic，避免在错的东西上讨论文笔
+        elif llm.settings.review_enabled and not has_errors(issues):
             critique = _review(cached, record, text, target_words)
             if critique is None:
                 action = "评审失败，已跳过"
@@ -285,6 +308,8 @@ def write(
             record.rewrites = rounds
             if rounds:
                 action = f"按评审意见改写 {rounds} 轮"
+
+        record.rewrites = rounds
 
         project.ensure_dirs()
         path = project.chapter_path(number)

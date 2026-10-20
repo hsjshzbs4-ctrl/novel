@@ -216,3 +216,21 @@ def test_empty_rewrite_reports_reason_and_keeps_draft(planned: Project) -> None:
     assert "空稿" in result.review_action
     assert "length" in result.review_action
     assert result.rewrites == 0
+
+
+def test_author_notes_take_priority_over_critic(planned: Project) -> None:
+    """作者直接下指令时，不再让 Critic 猜。"""
+    provider = ScriptedProvider(
+        {
+            "writer": [_draft("初稿"), _draft("改稿")],
+            "critic": ['{"score": 3.0, "issues": [{"code": "X", "level": "warn", "message": "随便"}]}'],
+        }
+    )
+    llm = _llm(provider, review_enabled=True)
+
+    result = pipeline.writer.write(planned, llm, 1, words=50, notes=["结尾改狠一点"])
+
+    assert result.rewrites == 1
+    assert "改稿" in result.path.read_text(encoding="utf-8")
+    assert provider.calls.count("critic") == 0
+    assert "作者意见" in result.review_action

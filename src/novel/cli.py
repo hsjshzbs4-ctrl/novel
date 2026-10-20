@@ -237,6 +237,9 @@ def write(
     words: Optional[int] = typer.Option(None, "--words", "-w", help="覆盖本章目标字数"),
     review: bool = typer.Option(True, "--review/--no-review", help="是否调用 Critic 评审质量"),
     fresh: bool = typer.Option(False, "--fresh", help="忽略断点缓存，强制重新生成"),
+    note: Optional[list[str]] = typer.Option(
+        None, "--note", "-n", help="给作者自己的修改意见（可重复），优先于自动评审"
+    ),
     path: Path = typer.Option(Path("."), "--path", "-p"),
 ) -> None:
     """写一章正文。"""
@@ -247,7 +250,9 @@ def write(
 
     with console.status("[cyan]调用 writer...[/cyan]"):
         try:
-            result = pipeline.writer.write(project, llm, chapter, words=words, fresh=fresh)
+            result = pipeline.writer.write(
+                project, llm, chapter, words=words, fresh=fresh, notes=list(note or [])
+            )
         except Exception as exc:  # noqa: BLE001
             _fail(str(exc))
 
