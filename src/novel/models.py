@@ -291,6 +291,8 @@ class ProjectMeta(BaseModel):
     genre: str = ""
     logline: str = ""
     style: str = ""
+    #: 目标平台：fanqie / qimao / 空。决定 writer 的排版与节奏规则
+    platform: str = ""
     target_chapters: int = 100
     words_per_chapter: int = 3000
     created_at: str = Field(default_factory=utcnow)

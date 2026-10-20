@@ -408,6 +408,28 @@ def digest(
         console.print(f"[green]第{index}弧[/green] {text}")
 
 
+@app.command("config")
+def config(
+    platform: str = typer.Option("", "--platform", help="目标平台：fanqie / qimao / 空字符串清除"),
+    words: Optional[int] = typer.Option(None, "--words", "-w", help="每章目标字数"),
+    path: Path = typer.Option(Path("."), "--path", "-p"),
+) -> None:
+    """修改项目设置（目标平台、每章字数）。"""
+    project = _project(path)
+    with project.store() as store:
+        canon = store.load()
+        if platform:
+            canon.meta.platform = "" if platform in {"none", "clear"} else platform.strip().lower()
+        if words:
+            canon.meta.words_per_chapter = int(words)
+        store.save(canon)
+        meta = canon.meta
+
+    console.print(
+        f"平台：{meta.platform or '（未设置）'}｜每章目标：{meta.words_per_chapter} 字"
+    )
+
+
 @app.command("status")
 def status(path: Path = typer.Option(Path("."), "--path", "-p")) -> None:
     """查看进度。"""

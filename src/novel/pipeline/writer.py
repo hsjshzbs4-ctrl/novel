@@ -22,7 +22,7 @@ from ..project import Project
 from ..prompts import (
     COMPRESS_SYSTEM,
     LENGTH_TOPUP_RATIO,
-    WRITER_SYSTEM,
+    build_writer_system,
     compress_user,
     expand_user,
     writer_user,
@@ -206,7 +206,7 @@ def write(
             raise RuntimeError(f"第 {number} 章还没有章纲，先执行 `novel plan --start {number}`")
 
         target_words = words or canon.meta.words_per_chapter
-        system = WRITER_SYSTEM.format(words=target_words)
+        system = build_writer_system(target_words, canon.meta.platform)
         payload, context = build_writer_payload(canon, record, llm.settings.context_budget)
         user = writer_user(payload, number, target_words)
 
@@ -235,16 +235,6 @@ def write(
             )
 
         text = _clean(raw.text, number, record.title or f"第{number}章")
-
-        # 字数不足就补写一次：连载的字数稳定性直接影响读者预期，
-        # 但只补细节、不改情节，也不接受更短的"扩写"。
-        if count_words(text) < target_words * LENGTH_TOPUP_RATIO:
-            expanded = _topup(cached, system, payload, number, target_words, text, hint)
-            if expanded:
-                candidate = _clean(expanded, number, record.title or f"第{number}章")
-                if count_words(candidate) > count_words(text):
-                    text = candidate
-
         record.word_count = count_words(text)
         issues = check_chapter(canon, record, text, target_words=target_words)
 
@@ -310,6 +300,19 @@ def write(
                 action = f"按评审意见改写 {rounds} 轮"
 
         record.rewrites = rounds
+
+        # 补写必须放在所有改写之后：改写为了"改好"经常把章节写短，
+        # 先补后改等于白补（实测一章从 2000+ 被改到 1530）。
+        if count_words(text) < target_words * LENGTH_TOPUP_RATIO:
+            expanded = _topup(cached, system, payload, number, target_words, text, hint)
+            if expanded:
+                candidate = _clean(expanded, number, record.title or f"第{number}章")
+                probe = record.model_copy(deep=True)
+                probe.word_count = count_words(candidate)
+                candidate_issues = check_chapter(canon, probe, candidate, target_words=target_words)
+                if not has_errors(candidate_issues) and probe.word_count > record.word_count:
+                    text, issues = candidate, candidate_issues
+                    record.word_count = probe.word_count
 
         project.ensure_dirs()
         path = project.chapter_path(number)
