@@ -20,7 +20,7 @@ Canon 驱动的中文长篇小说引擎。一句话概括：**把"故事状态"�
 ## 安装（Windows）
 
 ```powershell
-git clone <仓库地址>
+git clone https://github.com/hsjshzbs4-ctrl/novel.git
 cd novel
 ```
 

@@ -38,7 +38,7 @@ git push origin v0.1.0
 别人就能这样装：
 
 ```bash
-pipx install git+https://github.com/<you>/novel-engine
+pipx install git+https://github.com/hsjshzbs4-ctrl/novel
 ```
 
 ## 发布 Skill 外壳

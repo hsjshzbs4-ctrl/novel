@@ -39,10 +39,10 @@ dev = [
     "build>=1.2",
 ]
 
-# 发布前把下面两行换成你的仓库地址（不填也能装，只是 PyPI 页面没有链接）
-# [project.urls]
-# Homepage = "https://github.com/<you>/novel-engine"
-# Issues = "https://github.com/<you>/novel-engine/issues"
+[project.urls]
+Homepage = "https://github.com/hsjshzbs4-ctrl/novel"
+Repository = "https://github.com/hsjshzbs4-ctrl/novel"
+Issues = "https://github.com/hsjshzbs4-ctrl/novel/issues"
 
 [project.scripts]
 novel = "novel.cli:app"
