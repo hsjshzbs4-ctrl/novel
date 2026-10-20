@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "novel-engine"
-version = "0.1.0"
+version = "0.2.0"
 description = "Canon-centric long-form fiction engine for Chinese web novels (DeepSeek-ready)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,10 +37,18 @@ dependencies = [
 export = [
     "python-docx>=1.1",
 ]
+mcp = [
+    "mcp>=2.0",
+]
+all = [
+    "python-docx>=1.1",
+    "mcp>=2.0",
+]
 dev = [
     "pytest>=8.2",
     "build>=1.2",
     "python-docx>=1.1",
+    "mcp>=2.0",
 ]
 
 [project.urls]

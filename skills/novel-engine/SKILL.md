@@ -27,6 +27,8 @@ description: 用 `novel` CLI 写中文长篇网文——全书骨架、弧预演
 
 ## 命令地图
 
+> 宿主支持 MCP 时，优先走 `novel mcp` 暴露的 10 个工具（同名逻辑，返回 JSON），比敲命令更省事。
+
 | 命令 | 作用 | 何时用 |
 |---|---|---|
 | `novel init "书名" --genre 玄幻 --chapters 120 --words 3000` | 建项目 | 第一次 |

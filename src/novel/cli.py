@@ -359,6 +359,19 @@ def export(
             console.print(f"  第{number}章：{reason}")
 
 
+@app.command("mcp")
+def mcp_command() -> None:
+    """启动 MCP 服务器（stdio），供 Claude Code / DSH 等宿主调用。"""
+    try:
+        from .mcp_server import run
+    except RuntimeError as exc:
+        _fail(str(exc))
+
+    # 注意：stdio 模式下 stdout 归协议所有，提示信息必须走 stderr
+    Console(stderr=True).print("[dim]novel-engine MCP server 已启动（stdio），Ctrl-C 退出[/dim]")
+    run()
+
+
 @app.command("status")
 def status(path: Path = typer.Option(Path("."), "--path", "-p")) -> None:
     """查看进度。"""

@@ -44,6 +44,14 @@ pip install python-docx
 
 epub / txt / md 不需要额外依赖。
 
+**要作为 MCP 服务器给 Agent 用：**
+
+```powershell
+pip install "novel-engine[mcp]"
+```
+
+两个都要就 `pip install "novel-engine[all]"`。
+
 ## 配置 Key
 
 在**作品目录**（不是安装目录）建 `.env`：

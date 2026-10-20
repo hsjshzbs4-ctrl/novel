@@ -11,8 +11,8 @@ python -m build --no-isolation --wheel --sdist
 
 产物在 `dist/`：
 
-- `novel_engine-0.1.0-py3-none-any.whl` —— 给别人 `pip install` 用
-- `novel_engine-0.1.0.tar.gz` —— 源码分发，含 `skills/`、`docs/`、`bench/`、`tests/`
+- `novel_engine-0.2.0-py3-none-any.whl` —— 给别人 `pip install` 用
+- `novel_engine-0.2.0.tar.gz` —— 源码分发，含 `skills/`、`docs/`、`bench/`、`tests/`
 
 > 不加 `--no-isolation` 时 build 会临时装 hatchling；网络慢会卡很久。
 
@@ -31,8 +31,8 @@ twine upload dist/*          # 需要 PyPI 账号和 API token
 打 tag 并把 wheel 挂到 Release：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 别人就能这样装：

@@ -42,6 +42,32 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 
 > 注意分工：**正文由引擎调模型写**，不是 Agent 自己写。Skill 只负责驱动。
 
+## 作为 MCP 服务器使用
+
+装好 `mcp` 依赖（`pip install "novel-engine[mcp]"`）后，把引擎挂到宿主里，Agent 就能直接调 10 个工具：
+
+```json
+{
+  "mcpServers": {
+    "novel": { "command": "novel", "args": ["mcp"] }
+  }
+}
+```
+
+| 工具 | 作用 |
+|---|---|
+| `novel_init` | 建书 |
+| `novel_architect` | 角色 / 规则 / 信息差 / 弧 |
+| `novel_rehearse` | 弧级事件预演 |
+| `novel_plan` | 章纲 |
+| `novel_write` | 写一章 |
+| `novel_batch` | 连续写（单次上限 20 章） |
+| `novel_status` / `novel_cost` | 进度与账本 |
+| `novel_recall` | 检索前情 |
+| `novel_export` | 导出 docx / epub / txt / md |
+
+工具**不抛异常**：失败返回 `{"ok": false, "error": "..."}`，让 Agent 看到可执行的提示而不是协议层堆栈。stdio 模式下提示信息走 stderr，stdout 只留给协议。
+
 ## 配置
 
 复制 `.env.example` 为 `.env`：
@@ -399,12 +425,12 @@ $ novel export --format docx
 - [x] W11 批量推进（缺章纲自动补、逐章汇报、失败可续）
 - [x] W12 可分发（wheel/sdist、安装脚本、Skill 外壳、发布文档）
 - [x] W13 导出（docx / epub / txt / md）
-- [ ] W14 MCP 暴露（让 Agent 直接调用引擎）
+- [x] W14 MCP 服务器（10 个工具，stdio，Agent 可直接驱动）
 
 ## 开发与发布
 
 ```bash
-python -m pytest          # 138 个测试
+python -m pytest          # 154 个测试
 python bench/scale.py     # 千章规模压测
 python -m build --no-isolation --wheel --sdist   # 打包
 ```
