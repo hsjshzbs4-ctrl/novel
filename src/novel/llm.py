@@ -324,6 +324,12 @@ class MockProvider:
         number = int(hint.get("number", 1))
         return {"summary": f"第{number}章：主角在断碑崖发现刻痕，线索指向一个已死之人。"}
 
+    def _digest(self, hint: dict[str, Any]) -> dict[str, Any]:
+        title = str(hint.get("title") or "这一弧")
+        return {
+            "digest": f"{title}：主角推进了主线，付出代价，线索指向更深的一层。",
+        }
+
     def _critic(self, hint: dict[str, Any]) -> dict[str, Any]:
         return {
             "score": 7.2,

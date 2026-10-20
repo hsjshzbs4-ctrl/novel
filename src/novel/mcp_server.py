@@ -96,6 +96,10 @@ def build_server() -> Any:
     def novel_export(path: str, format: str = "docx", output: str | None = None) -> str:
         return _dump(tools.export(path, format, output))
 
+    @server.tool(description="生成弧级摘要：把写完的一弧压成 80-120 字，供后续弧的预演和章纲参考。arc 为空时自动挑最早一条待摘要的弧。")
+    def novel_digest(path: str, arc: int | None = None) -> str:
+        return _dump(tools.digest(path, arc))
+
     @server.tool(description="查看 token 与耗时账本，按任务和按章统计。")
     def novel_cost(path: str) -> str:
         return _dump(tools.cost(path))

@@ -252,9 +252,16 @@ class Arc(BaseModel):
     turning_point: str = ""
     chapter_start: int
     chapter_end: int
+    #: 写完后压成的 80-120 字摘要，供后续弧的预演与章纲参考
+    digest: str = ""
+    #: 生成摘要时该弧已写到第几章（用于判断摘要是否过期）
+    digested_through: int = 0
 
     def contains(self, number: int) -> bool:
         return self.chapter_start <= number <= self.chapter_end
+
+    def digest_is_stale(self, written_through: int) -> bool:
+        return bool(self.digest) and written_through > self.digested_through
 
 
 class RehearsalEvent(BaseModel):

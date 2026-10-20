@@ -24,7 +24,7 @@ from . import pipeline
 from .checks import has_errors
 from .config import Settings
 from .export import export as export_book
-from .llm import LLM
+from .llm import LLM, LLMError
 from .models import ProjectMeta
 from .project import Project, create, find_root, open_project
 from .recall import search as recall_search
@@ -372,6 +372,37 @@ def mcp_command() -> None:
     run()
 
 
+@app.command("digest")
+def digest(
+    arc: Optional[int] = typer.Option(None, "--arc", "-a", help="弧号；省略则自动挑最早一条待摘要的弧"),
+    all_arcs: bool = typer.Option(False, "--all", help="把所有待摘要的弧都生成"),
+    path: Path = typer.Option(Path("."), "--path", "-p"),
+) -> None:
+    """生成弧级摘要：把写完的一条弧压成 80-120 字，供后续弧参考。"""
+    project = _project(path)
+    llm = _llm()
+
+    with project.store() as store:
+        canon = store.load()
+
+    if arc is not None:
+        targets = [arc]
+    else:
+        pending = pipeline.digest.complete_arcs(canon)
+        targets = pending if all_arcs else pending[:1]
+
+    if not targets:
+        console.print("[yellow]没有待摘要的弧：要么还没写完，要么摘要已是最新。[/yellow]")
+        return
+
+    for index in targets:
+        try:
+            _, text = pipeline.digest.run(project, llm, index)
+        except (pipeline.digest.DigestError, LLMError) as exc:
+            _fail(str(exc))
+        console.print(f"[green]第{index}弧[/green] {text}")
+
+
 @app.command("status")
 def status(path: Path = typer.Option(Path("."), "--path", "-p")) -> None:
     """查看进度。"""
@@ -400,6 +431,8 @@ def status(path: Path = typer.Option(Path("."), "--path", "-p")) -> None:
     table.add_row(
         "弧预演", f"{len(committed_events)} 已兑现 / {len(planned_events)} 待兑现"
     )
+    digested = len([a for a in canon.arcs if a.digest])
+    table.add_row("弧摘要", f"{digested} / {len(canon.arcs)}")
     table.add_row(
         "版本",
         f"v{canon.version}（历史 {history_count} 版 / {history_bytes / 1024:.0f} KB）",

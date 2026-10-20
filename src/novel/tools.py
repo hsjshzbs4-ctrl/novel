@@ -256,6 +256,32 @@ def export(path: str, format: str = "docx", output: str | None = None) -> dict[s
         return _fail(f"export 失败：{exc}")
 
 
+def digest(path: str, arc: int | None = None) -> dict[str, Any]:
+    """生成弧级摘要。arc 为空时挑最早一条待摘要的弧。"""
+    try:
+        project = _resolve(path)
+        llm = _llm(project)
+        with project.store() as store:
+            canon = store.load()
+
+        if arc is None:
+            pending = pipeline.digest.complete_arcs(canon)
+            if not pending:
+                return _ok(pending=[], message="没有待摘要的弧")
+            arc = pending[0]
+
+        canon, text = pipeline.digest.run(project, llm, int(arc))
+        return _ok(
+            arc=int(arc),
+            digest=text,
+            pending=pipeline.digest.complete_arcs(canon),
+        )
+    except ToolError as exc:
+        return _fail(str(exc))
+    except Exception as exc:  # noqa: BLE001
+        return _fail(f"digest 失败：{exc}")
+
+
 def cost(path: str) -> dict[str, Any]:
     """查看 token 与耗时账本。"""
     try:
@@ -275,6 +301,7 @@ __all__ = [
     "architect",
     "batch",
     "cost",
+    "digest",
     "export",
     "init",
     "plan",

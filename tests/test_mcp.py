@@ -56,6 +56,7 @@ def test_server_lists_all_tools() -> None:
             "novel_batch",
             "novel_recall",
             "novel_export",
+            "novel_digest",
             "novel_cost",
         } <= names
         # 每个工具都要有可读描述，否则 Agent 不知道该不该用

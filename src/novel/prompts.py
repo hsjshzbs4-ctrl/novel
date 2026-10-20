@@ -138,6 +138,13 @@ JSON 结构：
 COMPRESS_SYSTEM = """你是记忆管理器。把章节压缩成两句话，只保留"谁做了什么、结果如何、留下什么线索"。
 只输出 JSON：{"summary": "..."}，不超过 120 字，不要解释。"""
 
+DIGEST_SYSTEM = """你是长篇连载的档案员。把一整条弧压缩成 80-120 字的摘要，供几十章之后的写作参考。
+
+只写四件事：主角这一弧想要什么、付出了什么代价、结果如何、留下什么未了。
+不要罗列每章情节，不要评价好坏，不要写"本弧讲述了"这类废话。
+
+只输出 JSON：{"digest": "..."}，不要解释。"""
+
 
 def _json_block(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -189,7 +196,16 @@ def rehearsal_user(
     # 前面所有弧的一句话走向：写到第 40 弧时，模型需要知道全书怎么走过来的
     start = arc_info.get("chapter_start", 1)
     completed = [
-        {"arc": a.index, "title": a.title, "goal": a.goal[:36], "turning": a.turning_point[:36]}
+        (
+            {"arc": a.index, "title": a.title, "digest": a.digest}
+            if a.digest
+            else {
+                "arc": a.index,
+                "title": a.title,
+                "goal": a.goal[:36],
+                "turning": a.turning_point[:36],
+            }
+        )
         for a in canon.arcs
         if a.chapter_end < start
     ][-30:]
@@ -269,6 +285,14 @@ def planner_user(canon: Canon, numbers: list[int], arc_info: dict[str, Any]) -> 
     other_names = [c.name for c in canon.characters if c.name not in detailed_names]
     omitted = max(0, len(other_names) - 100)
     other_names = other_names[:100]
+
+    # 最近两条已写弧的摘要：让章纲知道前面付出了什么代价，别重复
+    start_chapter = int(arc_info.get("chapter_start", 1) or 1)
+    previous_arcs = [
+        {"arc": a.index, "title": a.title, "digest": a.digest}
+        for a in sorted(canon.arcs, key=lambda item: item.index)
+        if a.chapter_end < start_chapter and a.digest
+    ][-2:]
     open_fs = [
         {"id": f.id, "text": f.text, "planted": f.planted_chapter}
         for f in canon.open_foreshadows()[:12]
@@ -315,6 +339,7 @@ def planner_user(canon: Canon, numbers: list[int], arc_info: dict[str, Any]) -> 
             "文风": canon.meta.style,
         },
         "当前弧": arc_info,
+        "前情弧摘要": previous_arcs,
         "全书计划章数": canon.meta.target_chapters,
         "角色档案": characters,
         "其他角色（只有名字，不要新造角色）": other_names,
@@ -369,3 +394,17 @@ def critic_user(record: ChapterRecord, text: str, words: int) -> str:
 
 def compress_user(number: int, text: str) -> str:
     return f"第 {number} 章正文：\n\n{text[:8000]}"
+
+
+def digest_user(arc: Any, records: list[Any]) -> str:
+    lines = [
+        f"弧：第{arc.chapter_start}-{arc.chapter_end}章《{arc.title}》",
+        f"目标：{arc.goal or '未填写'}",
+        f"冲突：{arc.conflict or '未填写'}",
+        f"转折：{arc.turning_point or '未填写'}",
+        "",
+        "各章实际写了什么：",
+    ]
+    for record in records:
+        lines.append(f"- 第{record.number}章：{record.summary or record.title}")
+    return "\n".join(lines)
