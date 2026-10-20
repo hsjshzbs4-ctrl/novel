@@ -64,6 +64,17 @@ def _review(llm: LLM, record: ChapterRecord, text: str, words: int) -> Critique 
         return None
 
 
+def _style_sample(project: Project) -> str:
+    """作品目录下的 style.md：语感样例。有就用，没有不影响写作。"""
+    path = project.root / "style.md"
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def _topup(
     llm: LLM,
     system: str,
@@ -206,7 +217,9 @@ def write(
             raise RuntimeError(f"第 {number} 章还没有章纲，先执行 `novel plan --start {number}`")
 
         target_words = words or canon.meta.words_per_chapter
-        system = build_writer_system(target_words, canon.meta.platform)
+        system = build_writer_system(
+            target_words, canon.meta.platform, _style_sample(project)
+        )
         payload, context = build_writer_payload(canon, record, llm.settings.context_budget)
         user = writer_user(payload, number, target_words)
 

@@ -142,11 +142,23 @@ PLATFORM_RULES = {
 }
 
 
-def build_writer_system(words: int, platform: str = "") -> str:
-    """writer 的 system prompt：通用要求 + 平台规范。"""
+def build_writer_system(words: int, platform: str = "", style_sample: str = "") -> str:
+    """writer 的 system prompt：通用要求 + 平台规范 + 语感样例。"""
     base = WRITER_SYSTEM.format(words=words)
     block = PLATFORM_RULES.get((platform or "").strip().lower(), "")
-    return f"{base}\n\n{block}" if block else base
+    if block:
+        base = f"{base}\n\n{block}"
+    sample = (style_sample or "").strip()
+    if sample:
+        base = (
+            f"{base}\n\n【文风样例】\n"
+            "以下是目标平台的语感样例。**只学句长、断句、对话节奏和系统面板的写法**；\n"
+            "不要复用其中的任何句子、人名、设定。\n"
+            "----\n"
+            f"{sample[:1200]}\n"
+            "----"
+        )
+    return base
 
 CRITIC_SYSTEM = """你是网文编辑。你只提供**修改建议**，不判定章节是否合格——合格与否由程序的硬规则决定。
 
