@@ -34,6 +34,16 @@ novel --help
 
 脚本会优先用 `pipx` 装成全局 `novel` 命令；没有 pipx 就在项目里建 `.venv`。
 
+**要导出 docx 需要额外装一个依赖：**
+
+```powershell
+pip install "novel-engine[export]"
+# 或直接
+pip install python-docx
+```
+
+epub / txt / md 不需要额外依赖。
+
 ## 配置 Key
 
 在**作品目录**（不是安装目录）建 `.env`：

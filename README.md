@@ -76,6 +76,7 @@ novel rehearse --arc 1          # 先定整弧事件骨架
 novel plan --count 10           # 章纲逐条落实预演事件
 novel write --ch 1
 novel batch --from 1 --to 20    # 批量推进，适合挂夜里
+novel export --format docx      # 装订成书
 novel status
 novel doctor
 ```
@@ -348,6 +349,24 @@ $ novel batch --from 3 --to 4
 
 实测吞吐约 **100 秒/章**（评审开启）。关掉评审约快一倍。建议每晚跑 20-30 章，早上看 `novel status` 和失败列表。
 
+### 导出成册
+
+```bash
+$ novel export --format docx
+已导出 E:\book\断碑.docx
+  3 章 · 2,327 字 · 40.5 KB
+```
+
+| 格式 | 说明 |
+|---|---|
+| `docx` | 封面 + 目录域 + 分章标题，中文宋体；需 `pip install "novel-engine[export]"` |
+| `epub` | EPUB 3，含 nav 与 ncx 双目录，纯标准库实现，无额外依赖 |
+| `txt` / `md` | 纯文本，适合直接贴到平台后台 |
+
+- 章节顺序以 Canon 章号为准，**真实章号会保留**（第 1、3、4 章不会被改成 1、2、3）；
+- 计划中但未写的章节自动忽略；未通过校验的章节默认跳过，`--include-rejected` 可强制带上；
+- docx 的目录是 Word 域，打开后右键「更新域」才生成页码——这是 Word 的机制，不是缺陷。
+
 ## 千章压测
 
 `python bench/scale.py` 会合成一个 1000 章的项目（60 角色、40 弧、80 伏笔、500 预演事件），只测数据层与检索层，不调模型：
@@ -379,12 +398,13 @@ $ novel batch --from 3 --to 4
 - [x] W10 长程召回（实体/词面/二元组/近因打分，零依赖，成稿才算前情）
 - [x] W11 批量推进（缺章纲自动补、逐章汇报、失败可续）
 - [x] W12 可分发（wheel/sdist、安装脚本、Skill 外壳、发布文档）
-- [ ] W13 导出（docx/epub）、MCP 暴露
+- [x] W13 导出（docx / epub / txt / md）
+- [ ] W14 MCP 暴露（让 Agent 直接调用引擎）
 
 ## 开发与发布
 
 ```bash
-python -m pytest          # 128 个测试
+python -m pytest          # 138 个测试
 python bench/scale.py     # 千章规模压测
 python -m build --no-isolation --wheel --sdist   # 打包
 ```

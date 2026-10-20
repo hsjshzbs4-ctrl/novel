@@ -35,6 +35,7 @@ description: 用 `novel` CLI 写中文长篇网文——全书骨架、弧预演
 | `novel plan --count 10` | 章纲 | 批量写之前 |
 | `novel write --ch 5` | 写一章 | 单章 |
 | `novel batch --from 1 --to 20` | 连续写 | 批量 |
+| `novel export --format docx` | 导出成册 | 交付给用户 |
 | `novel status` | 进度 | 每轮结束 |
 | `novel cost` | token/耗时账本 | 对账 |
 | `novel recall "苏晚"` | 检索旧章节 | 查“这人上次出现” |

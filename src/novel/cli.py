@@ -23,6 +23,7 @@ from rich.table import Table
 from . import pipeline
 from .checks import has_errors
 from .config import Settings
+from .export import export as export_book
 from .llm import LLM
 from .models import ProjectMeta
 from .project import Project, create, find_root, open_project
@@ -322,6 +323,40 @@ def batch(
         console.print("[dim]重跑同一条命令即可从中断处继续（断点会复用）。[/dim]")
     elif len(result.completed) == end - start + 1:
         console.print(f"[dim]{span} 全部完成[/dim]")
+
+
+@app.command("export")
+def export(
+    fmt: str = typer.Option("docx", "--format", "-f", help="docx | epub | txt | md"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="输出路径"),
+    include_rejected: bool = typer.Option(
+        False, "--include-rejected", help="把未通过校验的章节也导出去"
+    ),
+    path: Path = typer.Option(Path("."), "--path", "-p"),
+) -> None:
+    """导出成册：docx / epub / txt / md。"""
+    project = _project(path)
+    with project.store() as store:
+        canon = store.load()
+
+    try:
+        result, skipped = export_book(
+            project,
+            canon,
+            fmt=fmt,
+            output=output,
+            include_rejected=include_rejected,
+        )
+    except (RuntimeError, ValueError) as exc:  # noqa: BLE001 - 统一转成 CLI 错误
+        _fail(str(exc))
+
+    size_kb = result.path.stat().st_size / 1024
+    console.print(f"[green]已导出[/green] {result.path}")
+    console.print(f"  {result.chapters} 章 · {result.words:,} 字 · {size_kb:,.1f} KB")
+    if skipped:
+        console.print(f"[yellow]跳过 {len(skipped)} 章[/yellow]")
+        for number, reason in skipped[:5]:
+            console.print(f"  第{number}章：{reason}")
 
 
 @app.command("status")

@@ -34,9 +34,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+export = [
+    "python-docx>=1.1",
+]
 dev = [
     "pytest>=8.2",
     "build>=1.2",
+    "python-docx>=1.1",
 ]
 
 [project.urls]
