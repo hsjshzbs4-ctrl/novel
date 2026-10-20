@@ -51,7 +51,8 @@ def default_routes() -> dict[str, ModelRoute]:
         # 8000 会被"思考"吃光：实测改写时思考占满 7999、16000 两种额度，正文一个字没吐。
         # 32k 是实测可用的上限，只是上限，不会真的花掉。
         "writer": ModelRoute(temperature=0.9, max_tokens=32000),
-        "critic": ModelRoute(temperature=0.2, max_tokens=5000, json_mode=True),
+        # critic 同样会被思考吃额度：5000 时出现过整章评不出分的情况
+        "critic": ModelRoute(temperature=0.2, max_tokens=12000, json_mode=True),
         "compress": ModelRoute(temperature=0.2, max_tokens=1200),
         "digest": ModelRoute(temperature=0.2, max_tokens=800, json_mode=True),
     }
