@@ -286,6 +286,11 @@ def write(
                     rounds = 1
                     action = "按作者意见改写"
 
+            # 手动改完也要评一次：作者指令可能踩到本章禁区（比如让主角提前起疑），
+            # 硬校验查不出语义冲突，只有 Critic 能看出来。
+            if llm.settings.review_enabled and not has_errors(issues):
+                critique = _review(cached, record, text, target_words)
+
         # 双轨评审：只有硬校验全过的章节才送 Critic，避免在错的东西上讨论文笔
         elif llm.settings.review_enabled and not has_errors(issues):
             critique = _review(cached, record, text, target_words)

@@ -232,5 +232,7 @@ def test_author_notes_take_priority_over_critic(planned: Project) -> None:
 
     assert result.rewrites == 1
     assert "改稿" in result.path.read_text(encoding="utf-8")
-    assert provider.calls.count("critic") == 0
     assert "作者意见" in result.review_action
+    # 作者指令负责"改成什么样"，Critic 只负责事后打分——只跑一次，不再触发第二轮改写
+    assert provider.calls.count("critic") == 1
+    assert result.review_score == 3.0
