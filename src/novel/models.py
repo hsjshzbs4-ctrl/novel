@@ -70,6 +70,22 @@ class Fact(BaseModel):
     created_at: str = Field(default_factory=utcnow)
 
 
+class Opportunity(BaseModel):
+    """重生者记得、但**还没发生**的机缘。
+
+    和 Fact 的区别：Fact 是已经发生的事，Opportunity 是"我知道接下来会发生什么"。
+    混在一起，模型就会把计划当历史——这是长篇最常见的崩塌方式。
+
+    ``day`` 用末世历：爆发当天为第 0 天，负数是爆发前。
+    """
+
+    id: str = Field(default_factory=lambda: new_id("OPP"))
+    day: int = 0
+    text: str
+    taken: bool = False
+    taken_chapter: int | None = None
+
+
 class Foreshadow(BaseModel):
     """伏笔账本：埋下 → 回声 → 回收，三个阶段都必须可查询。
 
@@ -311,6 +327,7 @@ class Canon(BaseModel):
     chapters: list[ChapterRecord] = Field(default_factory=list)
     rehearsal_events: list[RehearsalEvent] = Field(default_factory=list)
     secrets: list[Secret] = Field(default_factory=list)
+    opportunities: list[Opportunity] = Field(default_factory=list)
     version: int = 1
 
     # -- 查询 ---------------------------------------------------------------

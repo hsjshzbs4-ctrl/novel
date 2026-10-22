@@ -363,6 +363,13 @@ def planner_user(canon: Canon, numbers: list[int], arc_info: dict[str, Any]) -> 
     omitted = max(0, len(other_names) - 100)
     other_names = other_names[:100]
 
+    # 还没兑现的机缘：重生流的主线就是"我知道会发生什么，我要抢在别人前面"
+    opportunities = [
+        {"day": item.day, "text": item.text}
+        for item in sorted(canon.opportunities, key=lambda x: x.day)
+        if not item.taken
+    ][:10]
+
     # 最近两条已写弧的摘要：让章纲知道前面付出了什么代价，别重复
     start_chapter = int(arc_info.get("chapter_start", 1) or 1)
     previous_arcs = [
@@ -425,6 +432,7 @@ def planner_user(canon: Canon, numbers: list[int], arc_info: dict[str, Any]) -> 
         "到期伏笔": due_fs,
         "未回收伏笔": open_fs,
         "信息差": secrets,
+        "未取的机缘": opportunities,
         "需要生成章纲的章节号": numbers,
     }
     return "请为下列章节生成章纲，严格按 JSON 输出。\n\n" + _json_block(payload)
