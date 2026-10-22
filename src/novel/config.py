@@ -45,9 +45,9 @@ def default_routes() -> dict[str, ModelRoute]:
     正文温度高、不开 JSON —— 正文永远不该由 JSON 解析器来兜底。
     """
     return {
-        "architect": ModelRoute(temperature=0.6, json_mode=True),
-        "rehearsal": ModelRoute(temperature=0.5, json_mode=True),
-        "planner": ModelRoute(temperature=0.6, json_mode=True),
+        "architect": ModelRoute(temperature=0.6, max_tokens=32000, json_mode=True),
+        "rehearsal": ModelRoute(temperature=0.5, max_tokens=32000, json_mode=True),
+        "planner": ModelRoute(temperature=0.6, max_tokens=32000, json_mode=True),
         # 8000 会被"思考"吃光：实测改写时思考占满 7999、16000 两种额度，正文一个字没吐。
         # 32k 是实测可用的上限，只是上限，不会真的花掉。
         "writer": ModelRoute(temperature=0.9, max_tokens=32000),
