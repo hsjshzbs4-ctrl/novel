@@ -41,6 +41,36 @@ def sentences_per_paragraph(text: str) -> float:
     return count_sentences(text) / max(len(paragraphs), 1)
 
 
+#: 名字旁边出现这些词，说明是"被提及"而不是"人出场"：文件、记忆、尸体、转述。
+_REFERENCE_MARKERS = (
+    "申请表", "申请", "档案", "卷宗", "登记", "册子", "名册", "名单", "表格", "表",
+    "编号", "签名", "签字", "签的", "盖的章", "名字", "姓", "号码", "存根", "残页",
+    "遗物", "尸体", "遗照", "生前", "死前", "记忆", "梦里", "梦见", "回忆", "想起",
+    "提过", "说过", "留下的", "遗留", "旧号", "那句", "叫他", "叫做",
+)
+
+#: 名字后面紧跟这些动作，说明人真的在场。
+_ACTING_WORDS = ("说", "道", "问", "答", "笑", "看", "站", "走", "坐", "抬", "伸", "拿", "把", "被", "朝", "冲")
+
+
+def _appears_in_person(name: str, text: str) -> bool:
+    """判断角色是否"出场"，而不是只被提到。
+
+    默认算出场——宁可误报一次让人复核，也不要漏掉"死人复活"。
+    只有一种情况豁免：名字旁边就是文件/记忆/尸体这类字眼
+    （"程铮那张甲类申请表"、"记忆里程铮站在天桥那头"）。
+    """
+    start = 0
+    while True:
+        index = text.find(name, start)
+        if index < 0:
+            return False
+        window = text[max(0, index - 40) : index + len(name) + 40]
+        if not any(marker in window for marker in _REFERENCE_MARKERS):
+            return True
+        start = index + len(name)
+
+
 @dataclass(frozen=True)
 class Issue:
     code: str
@@ -178,19 +208,23 @@ def check_chapter(
     if brief is not None:
         issues.extend(check_brief(canon, brief))
 
-    # 已死亡角色不得在后续章节正常出场（闪回/尸体提及由人工判断）
+    # 已死亡角色不得在后续章节**出场**。
+    # 注意：名字出现在文件、档案、回忆、台词里是合法的——死人也会被点名。
+    # 只按"字符串出现"判死，会把"程铮那张甲类申请表"这种句子误判成角色复活。
     for character in canon.characters:
         if character.status != "dead" or character.death_chapter is None:
             continue
         if record.number <= character.death_chapter:
             continue
-        if character.name and character.name in text:
+        if not character.name:
+            continue
+        if _appears_in_person(character.name, text):
             issues.append(
                 Issue(
                     "CONTINUITY",
                     "error",
                     f"角色「{character.name}」在第{character.death_chapter}章已死亡，"
-                    f"但第{record.number}章仍出现（若非闪回需修改）",
+                    f"但第{record.number}章仍出场（若非闪回需修改）",
                 )
             )
 

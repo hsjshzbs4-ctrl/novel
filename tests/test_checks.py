@@ -212,3 +212,40 @@ def test_too_short_sentences_warn() -> None:
     issues = check_chapter(canon, record, text)
 
     assert any(i.code == "STYLE" and "太碎" in i.message for i in issues)
+
+def _dead_canon():
+    canon = _canon()
+    canon.characters = [
+        Character(name="程铮", role="antagonist", status="dead", death_chapter=103)
+    ]
+    return canon
+
+
+def test_dead_character_on_paperwork_is_not_resurrection() -> None:
+    canon = _dead_canon()
+    record = ChapterRecord(number=108, word_count=1000)
+    text = "抽屉拉开一条缝，程铮那张甲类申请表从里面滑出来，最后一栏的末位数字露在外面。"
+
+    issues = check_chapter(canon, record, text)
+
+    assert not any(i.code == "CONTINUITY" for i in issues)
+
+
+def test_dead_character_acting_is_flagged() -> None:
+    canon = _dead_canon()
+    record = ChapterRecord(number=108, word_count=1000)
+    text = "程铮推开门走进来，把外套搭在椅背上。"
+
+    issues = check_chapter(canon, record, text)
+
+    assert any(i.code == "CONTINUITY" for i in issues)
+
+
+def test_dead_character_in_memory_is_not_resurrection() -> None:
+    canon = _dead_canon()
+    record = ChapterRecord(number=110, word_count=1000)
+    text = "记忆里程铮站在天桥那头，背对着他，一直没有回头。"
+
+    issues = check_chapter(canon, record, text)
+
+    assert not any(i.code == "CONTINUITY" for i in issues)
