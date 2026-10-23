@@ -42,13 +42,47 @@ def _safe(title: str, limit: int = 40) -> str:
 
 
 def _body(chapter: ExportedChapter) -> str:
-    """正文：去掉空行段落之外的一切修饰，保留一句一段。"""
-    paragraphs = [p.strip() for p in chapter.text.split("\n\n") if p.strip()]
+    """正文：去掉空行段落之外的一切修饰，保留一句一段。
+
+    单个换行也要断开——系统面板那种"两行贴在一起"的段落，
+    在 docx 里会变成一个带强制换行的段落，平台的解析器可能读成一行。
+    """
+    paragraphs = [p.strip() for p in re.split(r"\n+", chapter.text) if p.strip()]
     return "\n\n".join(paragraphs)
 
 
 def _word_count(text: str) -> int:
     return len(re.findall(r"[\u4e00-\u9fff]", text))
+
+
+def write_upload_docx(chapters: list[ExportedChapter], path: Path) -> Path | None:
+    """平台批量导入专用 docx：只有 H1 章节标题 + 正文。
+
+    番茄/七猫的上传解析规则是"按 H1 拆章"，所以这里：
+    - 不放书名页、不放目录域、不放任何非章节文字，避免解析出多余章节；
+    - 章节标题必须是 `第N章 标题`（阿拉伯数字），且用 Heading 1 样式；
+    - 正文用普通段落，保留一句一段。
+    """
+    try:
+        from docx import Document
+        from docx.oxml.ns import qn
+        from docx.shared import Pt
+    except ImportError:  # pragma: no cover
+        return None
+
+    document = Document()
+    normal = document.styles["Normal"]
+    normal.font.name = "宋体"
+    normal.font.size = Pt(11)
+    normal.element.rPr.rFonts.set(qn("w:eastAsia"), "宋体")
+
+    for chapter in chapters:
+        document.add_heading(f"第{chapter.number}章 {chapter.title}".strip(), level=1)
+        for block in [p.strip() for p in re.split(r"\n+", chapter.text) if p.strip()]:
+            document.add_paragraph(block)
+
+    document.save(path)
+    return path
 
 
 def publish(
@@ -93,6 +127,8 @@ def publish(
 
     (out_dir / "全本.txt").write_text("\n\n\n".join(merged_parts) + "\n", encoding=encoding)
 
+    docx_path = write_upload_docx(chapters, out_dir / "上传用.docx")
+
     with (out_dir / "目录.csv").open("w", encoding=encoding, newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["章号", "标题", "字数", "达标"])
         writer.writeheader()
@@ -116,9 +152,10 @@ def publish(
     lines += [
         "",
         "文件说明：",
-        "  单章/    一章一个 txt，标题独立一行，后台逐章粘贴或上传",
-        "  全本.txt 章与章之间用标题行分隔，支持批量导入的后台可直接用",
-        "  目录.csv 章号、标题、字数、是否达标，用于人工核对",
+        "  上传用.docx  平台批量导入专用：每章一个 H1 标题（第N章 标题），只有标题和正文",
+        "  单章/        一章一个 txt，后台逐章粘贴或上传",
+        "  全本.txt     章与章之间用标题行分隔，支持批量导入的后台可直接用",
+        "  目录.csv     章号、标题、字数、是否达标，用于人工核对",
         "",
         "注意：",
         "  1. 正文已去掉 Markdown 标记，一句一段；",
