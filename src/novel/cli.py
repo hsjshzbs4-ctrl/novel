@@ -27,6 +27,7 @@ from .export import export as export_book
 from .llm import LLM, LLMError
 from .models import ProjectMeta
 from .project import Project, create, find_root, open_project
+from .publish import publish as publish_package
 from .recall import search as recall_search
 
 
@@ -460,6 +461,34 @@ def retitle(
     for number, old, new in changed:
         table.add_row(str(number), old or "-", new)
     console.print(table)
+
+
+@app.command("publish")
+def publish(
+    platform: str = typer.Option("fanqie", "--platform", help="fanqie / qimao / generic"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="输出目录"),
+    no_bom: bool = typer.Option(False, "--no-bom", help="不写 BOM（默认写）"),
+    path: Path = typer.Option(Path("."), "--path", "-p"),
+) -> None:
+    """按投稿格式打包：单章 txt + 合并 txt + 目录 + 说明。"""
+    project = _project(path)
+    with project.store() as store:
+        canon = store.load()
+
+    out = output or (project.root / "publish" / platform)
+    try:
+        result = publish_package(project, canon, out, platform, bom=not no_bom)
+    except ValueError as exc:
+        _fail(str(exc))
+
+    console.print(f"[green]已打包[/green] {result.out_dir}")
+    console.print(f"{result.chapters} 章 · {result.words:,} 字")
+
+    if result.short_chapters:
+        console.print(
+            f"[yellow]低于建议下限：{len(result.short_chapters)} 章[/yellow] "
+            + "、".join(f"第{n}章({w})" for n, w in result.short_chapters[:12])
+        )
 
 
 @app.command("status")
